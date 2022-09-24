@@ -1,0 +1,4 @@
+requests
+random-word
+telethon
+deep-translator
