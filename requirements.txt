@@ -2,3 +2,7 @@ requests
 random-word
 telethon
 deep-translator
+gTTS
+torch
+transformers
+python-dotenv

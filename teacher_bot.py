@@ -6,11 +6,17 @@ import json
 
 import torch
 import requests
+from dotenv import load_dotenv
+from gtts import gTTS
 from random_word import RandomWords
+from random_word.services.wordnik import API_KEY
 from telethon.sync import TelegramClient, events
 from telethon.tl.custom import Conversation
 from deep_translator import GoogleTranslator
 from diffusers import StableDiffusionPipeline, LMSDiscreteScheduler
+
+
+load_dotenv()
 
 IMAGE_FILE_NAME = "temp.jpeg"
 
@@ -46,7 +52,9 @@ async def responser(conv: Conversation):
         return False
 
 
-async def send_words():
+# async def send_words():
+@bot.on(events.NewMessage(pattern="/trigger"))
+async def send_words(event):
     sender = "@dmglubokov"
     while True:
         r = RandomWords()
@@ -62,7 +70,20 @@ async def send_words():
 
         # Translate.
         translation = t.translate(word)
-        s = f"{word} – {translation}\n"
+        s = f"{word} – {translation}\n\n"
+        url = f"https://api.wordnik.com/v4/word.json/{word}/examples"
+        r = requests.get(
+            url,
+            params={
+                "includeDuplicates": "false",
+                "useCanonical": "false",
+                "limit": "3",
+                "api_key": API_KEY
+            }
+        )
+        print(r.json())
+        response = r.json()["examples"]
+        s += "__Examples:___\n\n" + "\n\n".join([r["text"] for r in response])
         await bot.send_message(sender, s)
         time.sleep(1)
 
@@ -89,13 +110,17 @@ async def send_words():
                     await bot.send_file(sender, f.read())
         else:
             try:
-                prompt = f"{word} high-resolution 4k zbrush rendered"
-                image = pipe(prompt)["sample"][0]
+                prompt = f"{word} highly detailed 4k high resolution rendered volumetric lighting"
+                image = pipe(prompt, num_inference_steps=30)["sample"][0]
                 image.save(IMAGE_FILE_NAME)
                 with open(IMAGE_FILE_NAME, "rb") as f:
                     await bot.send_file(sender, f.read())
             except Exception:
                 await bot.send_message(sender, "__image not found__")
+
+        # Check pronunciation
+        gTTS(text=word, lang="en", slow=False).save("temp.mp3")
+        await bot.send_file(sender, "temp.mp3", voice_note=True)
 
         with open("words.json") as f:
             words = json.load(f)
@@ -118,7 +143,7 @@ async def send_words():
         with open("words.json", "w") as f:
             f.write(json.dumps(updated_words, ensure_ascii=False))
 
-        if len(updated_words) > 0:
+        if len(need_to_remember) > 0:
             s = "**remember these words**\n\n" + "\n".join(need_to_remember)
             await bot.send_message(sender, s)
 
@@ -180,8 +205,8 @@ async def test(event):
 
 try:
     print("(Press Ctrl+C to stop this)")
-    loop.create_task(send_words())
-    loop.create_task(send_texts())
+    # loop.create_task(send_words())
+    # loop.create_task(send_texts())
     bot.run_until_disconnected()
 finally:
     bot.disconnect()
