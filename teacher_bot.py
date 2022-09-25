@@ -4,17 +4,34 @@ import random
 import os
 import json
 
+import torch
 import requests
 from random_word import RandomWords
 from telethon.sync import TelegramClient, events
 from telethon.tl.custom import Conversation
 from deep_translator import GoogleTranslator
+from diffusers import StableDiffusionPipeline, LMSDiscreteScheduler
+
+IMAGE_FILE_NAME = "temp.jpeg"
 
 loop = asyncio.get_event_loop()
+
 api_id = eval(os.environ["API_ID"])
 api_hash = os.environ["API_HASH"]
 bot_token = os.environ["BOT_TOKEN"]
 bot = TelegramClient("teacher", api_id, api_hash).start(bot_token=bot_token)
+
+lms = LMSDiscreteScheduler(
+    beta_start=0.00085,
+    beta_end=0.012,
+    beta_schedule="scaled_linear"
+)
+token = os.environ["HUGGING_FACE"]
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+pipe = StableDiffusionPipeline.from_pretrained(
+    "CompVis/stable-diffusion-v1-4",
+    use_auth_token=token,
+).to(device)
 
 
 async def responser(conv: Conversation):
@@ -65,13 +82,20 @@ async def send_words():
         if len(results) > 0:
             url = results[0]["urls"]["small"]
             with requests.get(url, stream=True) as r:
-                with open("temp.jpeg", "wb") as f:
+                with open(IMAGE_FILE_NAME, "wb") as f:
                     for chunk in r.iter_content(1024):
                         f.write(chunk)
-                with open("temp.jpeg", "rb") as f:
+                with open(IMAGE_FILE_NAME, "rb") as f:
                     await bot.send_file(sender, f.read())
         else:
-            await bot.send_message(sender, "__image not found__")
+            try:
+                prompt = f"{word} high-resolution 4k zbrush rendered"
+                image = pipe(prompt)["sample"][0]
+                image.save(IMAGE_FILE_NAME)
+                with open(IMAGE_FILE_NAME, "rb") as f:
+                    await bot.send_file(sender, f.read())
+            except Exception:
+                await bot.send_message(sender, "__image not found__")
 
         with open("words.json") as f:
             words = json.load(f)
@@ -145,6 +169,7 @@ async def add(event):
         })
         with open("texts.json", "w") as f:
             f.write(json.dumps(texts, ensure_ascii=False))
+        await conv.send_message("Added!")
 
 
 @bot.on(events.NewMessage(pattern="/test"))
